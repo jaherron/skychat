@@ -1,45 +1,39 @@
 import { useState } from 'react'
 import { AtpAgent } from '@atproto/api'
-import { Client, type Signer } from '@xmtp/browser-sdk'
+import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
 import './App.css'
 
 // Create a passkey-based signer
-const createPasskeySigner = (): Signer => {
-  let credential: PublicKeyCredential | null = null
-  let credentialId: string = ''
+const createPasskeySigner = async (): Promise<Signer> => {
+  // Create the passkey credential immediately
+  const credential = await navigator.credentials.create({
+    publicKey: {
+      challenge: crypto.getRandomValues(new Uint8Array(32)),
+      rp: { name: 'SkyChat', id: window.location.hostname },
+      user: {
+        id: crypto.getRandomValues(new Uint8Array(32)),
+        name: 'SkyChat User',
+        displayName: 'SkyChat User',
+      },
+      pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+      authenticatorSelection: {
+        authenticatorAttachment: 'platform',
+        userVerification: 'required',
+      },
+    },
+  }) as PublicKeyCredential
+
+  const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
 
   const getIdentifier = () => {
-    // For demo, use a fixed identifier based on passkey
-    // In production, this should be derived from the passkey
+    // For passkeys, use the credential ID as the identifier
     return {
-      identifierKind: 'Ethereum' as const,
-      identifier: '0x' + credentialId.slice(0, 40).padStart(40, '0'),
+      identifierKind: IdentifierKind.Passkey,
+      identifier: credentialId,
     }
   }
 
   const signMessage = async (message: string): Promise<Uint8Array> => {
-    if (!credential) {
-      // Create a new passkey credential
-      credential = await navigator.credentials.create({
-        publicKey: {
-          challenge: crypto.getRandomValues(new Uint8Array(32)),
-          rp: { name: 'SkyChat', id: window.location.hostname },
-          user: {
-            id: crypto.getRandomValues(new Uint8Array(32)),
-            name: 'SkyChat User',
-            displayName: 'SkyChat User',
-          },
-          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-          authenticatorSelection: {
-            authenticatorAttachment: 'platform',
-            userVerification: 'required',
-          },
-        },
-      }) as PublicKeyCredential
-
-      credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
-    }
-
     const assertion = await navigator.credentials.get({
       publicKey: {
         challenge: new TextEncoder().encode(message),
@@ -101,7 +95,7 @@ function App() {
       setIsLoading(true)
       setStatus('Creating passkey and XMTP client...')
 
-      const signer = createPasskeySigner()
+      const signer = await createPasskeySigner()
       const client = await Client.create(signer, { env: 'dev' })
       setXmtpClient(client)
 
