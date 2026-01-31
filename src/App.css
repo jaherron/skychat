@@ -284,6 +284,30 @@ button:disabled {
   color: var(--dark-blue);
 }
 
+/* OAuth button */
+.oauth-button {
+  background: #1da1f2;
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  transition: background-color 0.2s;
+  width: 100%;
+  max-width: 300px;
+}
+
+.oauth-button:hover {
+  background: #1a91da;
+}
+
+.oauth-button:disabled {
+  background: #ccc;
+  cursor: not-allowed;
+}
+
 /* Logout button */
 .logout-button {
   background: var(--error-red, #dc3545);

@@ -1,8 +1,30 @@
-import { useState, useEffect, useCallback } from 'react'
-import { AtpAgent } from '@atproto/api'
+import { useState, useEffect } from 'react'
+import { Agent } from '@atproto/api'
 import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
+import { BrowserOAuthClient } from '@atproto/oauth-client-browser'
 import { ethers } from 'ethers'
 import './App.css'
+
+// OAuth utilities
+async function createOAuthClient() {
+  const client = new BrowserOAuthClient({
+    clientMetadata: {
+      client_id: `${window.location.origin}/`,
+      client_name: 'SkyChat',
+      client_uri: window.location.origin,
+      redirect_uris: [`${window.location.origin}/oauth/callback`],
+      scope: 'atproto transition:generic',
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+      application_type: 'web',
+      dpop_bound_access_tokens: true,
+    },
+    handleResolver: 'https://bsky.social', // Using Bluesky's resolver for simplicity
+  })
+
+  return client
+}
 
 // Encryption utilities for key backup
 async function encryptPrivateKey(privateKey: string, password: string): Promise<string> {
@@ -105,9 +127,7 @@ const createEOASigner = (): { signer: Signer; isNew: boolean } => {
 };
 
 function App() {
-  const [blueskyHandle, setBlueskyHandle] = useState('')
-  const [blueskyPassword, setBlueskyPassword] = useState('')
-  const [agent, setAgent] = useState<AtpAgent | null>(null)
+  const [agent, setAgent] = useState<Agent | null>(null)
   const [xmtpClient, setXmtpClient] = useState<Client | null>(null)
   const [status, setStatus] = useState('')
   const [isLinked, setIsLinked] = useState(false)
@@ -118,82 +138,63 @@ function App() {
   const [restorePassword, setRestorePassword] = useState('')
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [hasExistingAccount, setHasExistingAccount] = useState(false)
+  const [oauthClient, setOauthClient] = useState<BrowserOAuthClient | null>(null)
 
-  const restoreBlueskySession = useCallback(async (sessionData: string, hasAccount: boolean) => {
-    try {
-      setIsLoading(true)
-      setStatus('Restoring Bluesky session...')
+  // Check for existing account and initialize OAuth client
+  useEffect(() => {
+    const initOAuth = async () => {
+      const existingKey = localStorage.getItem('skychat_wallet_private_key')
 
-      const session = JSON.parse(sessionData)
-      const agent = new AtpAgent({ service: 'https://bsky.social' })
-
-      // Try to resume the session
-      await agent.resumeSession(session)
-
-      setAgent(agent)
-      setStatus('Bluesky session restored!')
-
-      // If we have an existing account, check for identity link
-      if (hasAccount) {
-        await checkExistingIdentityLink(agent)
+      if (existingKey) {
+        setHasExistingAccount(true)
       }
-    } catch {
-      // Session expired or invalid, clear it
-      localStorage.removeItem('skychat_bluesky_session')
-      if (hasAccount) {
-        setStatus('Welcome back! Your Bluesky session expired. Please reconnect.')
-      } else {
-        setStatus('')
+
+      try {
+        const client = await createOAuthClient()
+        setOauthClient(client)
+
+        // Initialize the client - this handles callbacks and restores sessions
+        const result = await client.init()
+
+        if (result) {
+          const { session } = result
+          // Create agent with OAuth session
+          const newAgent = new Agent(session)
+          setAgent(newAgent)
+          setStatus('Bluesky session restored!')
+          
+          // If we have an existing account, check for identity link
+          if (existingKey) {
+            await checkExistingIdentityLink(newAgent)
+          }
+        } else if (existingKey) {
+          setStatus('Welcome back! Connect your Bluesky account to continue.')
+        }
+      } catch (error) {
+        console.error('OAuth initialization failed:', error)
+        if (existingKey) {
+          setStatus('Welcome back! Connect your Bluesky account to continue.')
+        }
       }
-    } finally {
-      setIsLoading(false)
     }
+
+    initOAuth()
   }, [])
 
-  // Check for existing account and session on mount
-  useEffect(() => {
-    const existingKey = localStorage.getItem('skychat_wallet_private_key')
-    const storedSession = localStorage.getItem('skychat_bluesky_session')
-
-    if (existingKey) {
-      setHasExistingAccount(true)
-    }
-
-    if (storedSession) {
-      restoreBlueskySession(storedSession, !!existingKey)
-    } else if (existingKey) {
-      setStatus('Welcome back! Connect your Bluesky account to continue.')
-    }
-  }, [restoreBlueskySession])
-
   const loginToBluesky = async () => {
-    if (!blueskyHandle || !blueskyPassword) {
-      setStatus('Please fill in all fields')
+    if (!oauthClient) {
+      setStatus('OAuth client not initialized')
       return
     }
 
     try {
       setIsLoading(true)
-      setStatus('Connecting to Bluesky...')
-      const newAgent = new AtpAgent({ service: 'https://bsky.social' })
-      await newAgent.login({
-        identifier: blueskyHandle,
-        password: blueskyPassword,
-      })
-      setAgent(newAgent)
+      setStatus('Starting OAuth flow...')
 
-      // Store the session for persistence
-      localStorage.setItem('skychat_bluesky_session', JSON.stringify(newAgent.session))
-
-      if (hasExistingAccount) {
-        // Check if identity is already linked
-        await checkExistingIdentityLink(newAgent)
-      } else {
-        setStatus('Successfully connected to Bluesky!')
-      }
+      // Start OAuth flow with Bluesky
+      await oauthClient.signIn('bsky.social')
     } catch (error) {
-      setStatus(`Connection failed: ${error}`)
-    } finally {
+      setStatus(`OAuth flow failed: ${error}`)
       setIsLoading(false)
     }
   }
@@ -202,19 +203,17 @@ function App() {
     setAgent(null)
     setXmtpClient(null)
     setIsLinked(false)
-    setBlueskyHandle('')
-    setBlueskyPassword('')
     localStorage.removeItem('skychat_bluesky_session')
     setStatus('')
   }
 
-  const checkExistingIdentityLink = async (agent: AtpAgent) => {
+  const checkExistingIdentityLink = async (agent: Agent) => {
     try {
       setStatus('Checking for existing identity link...')
       
       // Try to fetch the existing identity record
       const record = await agent.com.atproto.repo.getRecord({
-        repo: agent.session!.did,
+        repo: agent.did!,
         collection: 'org.xmtp.inbox',
         rkey: 'self',
       })
@@ -250,14 +249,14 @@ function App() {
       setStatus('Signing identity link...')
 
       // Sign the DID with XMTP installation key
-      const signatureBytes = await client.signWithInstallationKey(agent.session!.did)
+      const signatureBytes = await client.signWithInstallationKey(agent.did!)
       const signatureString = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)))
 
       setStatus('Publishing to Bluesky...')
 
       // Publish the record to ATProto
       await agent.com.atproto.repo.putRecord({
-        repo: agent.session!.did,
+        repo: agent.did!,
         collection: 'org.xmtp.inbox',
         rkey: 'self',
         record: {
@@ -276,7 +275,7 @@ function App() {
       let isValid = false
       for (const installation of inboxState.installations) {
         if (await client.verifySignedWithPublicKey(
-          agent.session!.did,
+          agent.did!,
           signatureBytes,
           installation.bytes
         )) {
@@ -363,20 +362,8 @@ function App() {
             <p>Already have a backup? <button onClick={() => setShowRestoreModal(true)} className="link-button">Restore from backup</button></p>
           </div>
 
-          <input
-            type="text"
-            placeholder="Bluesky handle (e.g., user.bsky.social)"
-            value={blueskyHandle}
-            onChange={(e) => setBlueskyHandle(e.target.value)}
-          />
-          <input
-            type="password"
-            placeholder="App password"
-            value={blueskyPassword}
-            onChange={(e) => setBlueskyPassword(e.target.value)}
-          />
-          <button onClick={loginToBluesky} disabled={isLoading}>
-            {isLoading ? 'Connecting...' : hasExistingAccount ? 'Continue with Account' : 'Connect Account'}
+          <button onClick={loginToBluesky} disabled={isLoading} className="oauth-button">
+            {isLoading ? 'Connecting...' : '🔵 Sign in with Bluesky'}
           </button>
         </div>
       )}
@@ -385,7 +372,7 @@ function App() {
         <div className="link-section">
           <h2>Create XMTP Identity</h2>
           <div className="info-box">
-            <p>✅ Connected as: <strong>{agent.session?.handle}</strong></p>
+            <p>✅ Connected as: <strong>{agent.did!}</strong></p>
             <button onClick={logout} className="logout-button">Logout</button>
           </div>
           <p>This will create a passkey for secure XMTP messaging that links to your Bluesky identity.</p>
@@ -402,7 +389,7 @@ function App() {
             <p><span className="success-icon"></span>Bluesky and XMTP identities are now connected</p>
           </div>
           <div className="identity-info">
-            <p><strong>Bluesky DID:</strong> {agent?.session?.did}</p>
+            <p><strong>Bluesky DID:</strong> {agent?.did}</p>
             <p><strong>XMTP Inbox:</strong> {xmtpClient?.inboxId}</p>
             <button onClick={logout} className="logout-button">Logout</button>
           </div>
