@@ -1,26 +1,25 @@
 import { useState, useEffect } from 'react'
 import { Agent } from '@atproto/api'
 import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
-import { BrowserOAuthClient } from '@atproto/oauth-client-browser'
+import { BrowserOAuthClient, buildAtprotoLoopbackClientMetadata } from '@atproto/oauth-client-browser'
 import { ethers } from 'ethers'
 import './App.css'
 
 // OAuth utilities
 async function createOAuthClient() {
+  // For development with localhost, use loopback client metadata
+  const clientMetadata = buildAtprotoLoopbackClientMetadata({
+    scope: 'atproto transition:generic',
+    redirect_uris: [`${window.location.origin}/oauth/callback`],
+  })
+
   const client = new BrowserOAuthClient({
     clientMetadata: {
-      client_id: `${window.location.origin}/`,
+      ...clientMetadata,
       client_name: 'SkyChat',
       client_uri: window.location.origin,
-      redirect_uris: [`${window.location.origin}/oauth/callback`],
-      scope: 'atproto transition:generic',
-      grant_types: ['authorization_code', 'refresh_token'],
-      response_types: ['code'],
-      token_endpoint_auth_method: 'none',
-      application_type: 'web',
-      dpop_bound_access_tokens: true,
     },
-    handleResolver: 'https://bsky.social', // Using Bluesky's resolver for simplicity
+    handleResolver: 'https://bsky.social',
   })
 
   return client
@@ -139,10 +138,12 @@ function App() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [hasExistingAccount, setHasExistingAccount] = useState(false)
   const [oauthClient, setOauthClient] = useState<BrowserOAuthClient | null>(null)
+  const [oauthClientLoading, setOauthClientLoading] = useState(true)
 
   // Check for existing account and initialize OAuth client
   useEffect(() => {
     const initOAuth = async () => {
+      setOauthClientLoading(true)
       const existingKey = localStorage.getItem('skychat_wallet_private_key')
 
       if (existingKey) {
@@ -150,11 +151,15 @@ function App() {
       }
 
       try {
+        console.log('Creating OAuth client...')
         const client = await createOAuthClient()
+        console.log('OAuth client created successfully')
         setOauthClient(client)
 
+        console.log('Initializing OAuth client...')
         // Initialize the client - this handles callbacks and restores sessions
         const result = await client.init()
+        console.log('OAuth client initialized:', result)
 
         if (result) {
           const { session } = result
@@ -172,9 +177,9 @@ function App() {
         }
       } catch (error) {
         console.error('OAuth initialization failed:', error)
-        if (existingKey) {
-          setStatus('Welcome back! Connect your Bluesky account to continue.')
-        }
+        setStatus(`Failed to initialize OAuth: ${error instanceof Error ? error.message : String(error)}`)
+      } finally {
+        setOauthClientLoading(false)
       }
     }
 
@@ -182,8 +187,13 @@ function App() {
   }, [])
 
   const loginToBluesky = async () => {
+    if (oauthClientLoading) {
+      setStatus('OAuth client is still initializing...')
+      return
+    }
+
     if (!oauthClient) {
-      setStatus('OAuth client not initialized')
+      setStatus('OAuth client failed to initialize')
       return
     }
 
@@ -362,8 +372,8 @@ function App() {
             <p>Already have a backup? <button onClick={() => setShowRestoreModal(true)} className="link-button">Restore from backup</button></p>
           </div>
 
-          <button onClick={loginToBluesky} disabled={isLoading} className="oauth-button">
-            {isLoading ? 'Connecting...' : '🔵 Sign in with Bluesky'}
+          <button onClick={loginToBluesky} disabled={isLoading || oauthClientLoading} className="oauth-button">
+            {oauthClientLoading ? 'Initializing...' : isLoading ? 'Connecting...' : '🔵 Sign in with Bluesky'}
           </button>
         </div>
       )}
