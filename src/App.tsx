@@ -14,6 +14,7 @@ async function createOAuthClient() {
   })
 
   const client = new BrowserOAuthClient({
+    allowHttp: true, // Allow HTTP for localhost development
     clientMetadata: {
       ...clientMetadata,
       client_name: 'SkyChat',
