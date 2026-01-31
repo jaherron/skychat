@@ -1,95 +1,108 @@
 import { useState } from 'react'
 import { AtpAgent } from '@atproto/api'
 import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
+import { ethers } from 'ethers'
 import './App.css'
 
-// Create a passkey-based signer
-const createPasskeySigner = async (): Promise<Signer> => {
-  // Check if WebAuthn is supported
-  if (!navigator.credentials || !navigator.credentials.create) {
-    throw new Error('WebAuthn is not supported in this browser')
-  }
-
-  // For development/testing: create a mock signer if passkeys fail
-  try {
-    // Create the passkey credential immediately
-    const credential = await Promise.race([
-      navigator.credentials.create({
-        publicKey: {
-          challenge: crypto.getRandomValues(new Uint8Array(32)),
-          rp: { name: 'SkyChat', id: window.location.hostname },
-          user: {
-            id: crypto.getRandomValues(new Uint8Array(32)),
-            name: 'SkyChat User',
-            displayName: 'SkyChat User',
-          },
-          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
-          authenticatorSelection: {
-            authenticatorAttachment: 'platform',
-            userVerification: 'required',
-          },
-        },
-      }) as Promise<PublicKeyCredential>,
-      new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('Passkey creation timed out')), 30000)
-      )
-    ])
-
-    const credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
-
-    const getIdentifier = () => {
-      // For passkeys, use the credential ID as the identifier
-      return {
-        identifierKind: IdentifierKind.Passkey,
-        identifier: credentialId,
-      }
-    }
-
-    const signMessage = async (message: string): Promise<Uint8Array> => {
-      const assertion = await navigator.credentials.get({
-        publicKey: {
-          challenge: new TextEncoder().encode(message),
-          allowCredentials: [{
-            id: credential.rawId,
-            type: 'public-key',
-          }],
-          userVerification: 'required',
-        },
-      }) as PublicKeyCredential
-
-      const response = assertion.response as AuthenticatorAssertionResponse
-      return new Uint8Array(response.signature)
-    }
-
-    return {
-      type: 'EOA',
-      getIdentifier,
-      signMessage,
-    }
-  } catch (passkeyError) {
-    console.warn('Passkey creation failed, falling back to mock signer:', passkeyError)
-    
-    // Fallback: create a mock signer for development
-    const mockCredentialId = 'mock-credential-' + Date.now()
-    
-    const getIdentifier = () => ({
-      identifierKind: IdentifierKind.Passkey,
-      identifier: mockCredentialId,
-    })
-
-    const signMessage = async (message: string): Promise<Uint8Array> => {
-      // Mock signature: just hash the message
-      const hash = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(message))
-      return new Uint8Array(hash)
-    }
-
-    return {
-      type: 'EOA',
-      getIdentifier,
-      signMessage,
-    }
-  }
+// Encryption utilities for key backup
+async function encryptPrivateKey(privateKey: string, password: string): Promise<string> {
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv },
+    key,
+    new TextEncoder().encode(privateKey)
+  );
+  const result = {
+    encryptedKey: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+    salt: btoa(String.fromCharCode(...salt)),
+    iv: btoa(String.fromCharCode(...iv))
+  };
+  return JSON.stringify(result);
 }
+
+async function decryptPrivateKey(encryptedData: string, password: string): Promise<string> {
+  const { encryptedKey, salt, iv } = JSON.parse(encryptedData);
+  const saltBytes = new Uint8Array(atob(salt).split('').map(c => c.charCodeAt(0)));
+  const ivBytes = new Uint8Array(atob(iv).split('').map(c => c.charCodeAt(0)));
+  const encryptedBytes = new Uint8Array(atob(encryptedKey).split('').map(c => c.charCodeAt(0)));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  const key = await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: saltBytes,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    keyMaterial,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['decrypt']
+  );
+  const decrypted = await crypto.subtle.decrypt(
+    { name: 'AES-GCM', iv: ivBytes },
+    key,
+    encryptedBytes
+  );
+  return new TextDecoder().decode(decrypted);
+}
+
+// Create an EOA signer using ethers.js
+const createEOASigner = (): { signer: Signer; isNew: boolean } => {
+  // Get or create a wallet
+  const getOrCreateWallet = () => {
+    let privateKey = localStorage.getItem('skychat_wallet_private_key');
+    let isNew = false;
+    if (!privateKey) {
+      const wallet = ethers.Wallet.createRandom();
+      privateKey = wallet.privateKey;
+      localStorage.setItem('skychat_wallet_private_key', privateKey);
+      isNew = true;
+    }
+    return { wallet: new ethers.Wallet(privateKey), isNew };
+  };
+
+  const { wallet, isNew } = getOrCreateWallet();
+
+  const signer: Signer = {
+    type: 'EOA',
+    getIdentifier: () => ({
+      identifier: wallet.address,
+      identifierKind: IdentifierKind.Ethereum,
+    }),
+    signMessage: async (message: string) => {
+      const signature = await wallet.signMessage(message);
+      return ethers.getBytes(signature);
+    },
+  };
+
+  return { signer, isNew };
+};
 
 function App() {
   const [blueskyHandle, setBlueskyHandle] = useState('')
@@ -99,6 +112,11 @@ function App() {
   const [status, setStatus] = useState('')
   const [isLinked, setIsLinked] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [showBackupModal, setShowBackupModal] = useState(false)
+  const [backupPassword, setBackupPassword] = useState('')
+  const [showRestoreModal, setShowRestoreModal] = useState(false)
+  const [restorePassword, setRestorePassword] = useState('')
+  const [restoreFile, setRestoreFile] = useState<File | null>(null)
 
   const loginToBluesky = async () => {
     if (!blueskyHandle || !blueskyPassword) {
@@ -128,9 +146,9 @@ function App() {
 
     try {
       setIsLoading(true)
-      setStatus('Creating passkey and XMTP client...')
+      setStatus('Creating XMTP account and client...')
 
-      const signer = await createPasskeySigner()
+      const { signer, isNew } = createEOASigner()
       setStatus('Initializing XMTP client...')
       const client = await Client.create(signer, { env: 'dev' })
       setXmtpClient(client)
@@ -176,6 +194,10 @@ function App() {
       if (isValid) {
         setIsLinked(true)
         setStatus('Identities successfully linked!')
+
+        if (isNew) {
+          setShowBackupModal(true)
+        }
       } else {
         setStatus('Link verification failed')
       }
@@ -186,9 +208,58 @@ function App() {
     }
   }
 
+  const handleBackup = async () => {
+    if (!backupPassword) {
+      setStatus('Please enter a password')
+      return
+    }
+    const privateKey = localStorage.getItem('skychat_wallet_private_key')
+    if (!privateKey) {
+      setStatus('No key to backup')
+      return
+    }
+    try {
+      const encrypted = await encryptPrivateKey(privateKey, backupPassword)
+      const blob = new Blob([encrypted], { type: 'application/json' })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = 'skychat-key-backup.json'
+      a.click()
+      URL.revokeObjectURL(url)
+      setShowBackupModal(false)
+      setBackupPassword('')
+      setStatus('Key backed up successfully!')
+    } catch (error) {
+      setStatus('Backup failed: ' + error)
+    }
+  }
+
+  const handleRestore = async () => {
+    if (!restoreFile || !restorePassword) {
+      setStatus('Please select a file and enter password')
+      return
+    }
+    try {
+      const text = await restoreFile.text()
+      const privateKey = await decryptPrivateKey(text, restorePassword)
+      localStorage.setItem('skychat_wallet_private_key', privateKey)
+      setShowRestoreModal(false)
+      setRestorePassword('')
+      setRestoreFile(null)
+      setStatus('Key restored successfully! Please refresh the page.')
+    } catch (error) {
+      setStatus('Restore failed: ' + error)
+    }
+  }
+
   return (
     <div className="app">
       <h1>🔗 SkyChat</h1>
+
+      <button onClick={() => setShowRestoreModal(true)} className="restore-button">
+        Restore from Backup
+      </button>
 
       {!agent && (
         <div className="login-section">
@@ -236,6 +307,49 @@ function App() {
             <p><strong>XMTP Inbox:</strong> {xmtpClient?.inboxId}</p>
           </div>
           <p>Chat functionality coming soon! 🚀</p>
+        </div>
+      )}
+
+      {showBackupModal && (
+        <div className="modal">
+          <div className="modal-content">
+            <h3>Backup Your Key</h3>
+            <p>Enter a password to encrypt your key for backup. Keep this password safe!</p>
+            <input
+              type="password"
+              placeholder="Backup password"
+              value={backupPassword}
+              onChange={(e) => setBackupPassword(e.target.value)}
+            />
+            <div className="modal-buttons">
+              <button onClick={handleBackup}>Download Backup</button>
+              <button onClick={() => setShowBackupModal(false)}>Skip</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showRestoreModal && (
+        <div className="modal">
+          <div className="modal-content">
+            <h3>Restore from Backup</h3>
+            <p>Select your backup file and enter the password used for encryption.</p>
+            <input
+              type="file"
+              accept=".json"
+              onChange={(e) => setRestoreFile(e.target.files?.[0] || null)}
+            />
+            <input
+              type="password"
+              placeholder="Backup password"
+              value={restorePassword}
+              onChange={(e) => setRestorePassword(e.target.value)}
+            />
+            <div className="modal-buttons">
+              <button onClick={handleRestore}>Restore Key</button>
+              <button onClick={() => setShowRestoreModal(false)}>Cancel</button>
+            </div>
+          </div>
         </div>
       )}
 

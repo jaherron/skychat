@@ -13,6 +13,7 @@
     "@atproto/api": "^0.18.20",
     "@xmtp/browser-sdk": "^6.2.0",
     "buffer": "^6.0.3",
+    "ethers": "^6.16.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0"
   },
