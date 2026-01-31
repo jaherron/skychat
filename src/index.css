@@ -1,0 +1,42 @@
+/* Global styles for SkyChat */
+:root {
+  --primary-blue: #1d9bf0;
+  --primary-blue-hover: #1a91da;
+  --dark-blue: #1d1d1f;
+  --light-blue: #e8f4fd;
+  --success-green: #00ba7c;
+  --warning-orange: #ff9500;
+  --error-red: #ff3b30;
+  --text-primary: #14171a;
+  --text-secondary: #536471;
+  --border-color: #cfd9de;
+  --background: #ffffff;
+  --background-secondary: #f7f9fa;
+  --shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  --shadow-hover: 0 4px 16px rgba(0, 0, 0, 0.15);
+  --border-radius: 12px;
+  --border-radius-large: 16px;
+  --transition: all 0.2s ease;
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Helvetica Neue', Arial, sans-serif;
+  background: linear-gradient(135deg, var(--background-secondary) 0%, var(--light-blue) 100%);
+  min-height: 100vh;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+#root {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+}

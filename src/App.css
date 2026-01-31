@@ -1,0 +1,236 @@
+/* App component styles */
+.app {
+  max-width: 480px;
+  width: 100%;
+  margin: 0 auto;
+  background: var(--background);
+  border-radius: var(--border-radius-large);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+  position: relative;
+}
+
+.app::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary-blue), var(--success-green));
+}
+
+/* Header */
+.app h1 {
+  background: var(--dark-blue);
+  color: white;
+  padding: 24px;
+  margin: 0;
+  text-align: center;
+  font-size: 28px;
+  font-weight: 700;
+  letter-spacing: -0.5px;
+}
+
+/* Section containers */
+.login-section,
+.link-section,
+.chat-section {
+  padding: 32px 24px;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.login-section:last-child,
+.link-section:last-child,
+.chat-section:last-child {
+  border-bottom: none;
+}
+
+/* Headings */
+.app h2 {
+  font-size: 20px;
+  font-weight: 600;
+  margin-bottom: 16px;
+  color: var(--text-primary);
+}
+
+.app p {
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+/* Form elements */
+input {
+  width: 100%;
+  padding: 14px 16px;
+  border: 2px solid var(--border-color);
+  border-radius: var(--border-radius);
+  font-size: 16px;
+  font-family: inherit;
+  transition: var(--transition);
+  margin-bottom: 12px;
+  background: var(--background);
+  color: var(--text-primary);
+}
+
+input:focus {
+  outline: none;
+  border-color: var(--primary-blue);
+  box-shadow: 0 0 0 3px rgba(29, 155, 240, 0.1);
+}
+
+input::placeholder {
+  color: var(--text-secondary);
+}
+
+/* Buttons */
+button {
+  width: 100%;
+  padding: 14px 20px;
+  background: var(--primary-blue);
+  color: white;
+  border: none;
+  border-radius: var(--border-radius);
+  font-size: 16px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+  margin-top: 8px;
+}
+
+button:hover {
+  background: var(--primary-blue-hover);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-hover);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  background: var(--text-secondary);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+/* Status messages */
+.status {
+  padding: 16px 24px;
+  background: var(--background-secondary);
+  border-top: 1px solid var(--border-color);
+  font-size: 14px;
+  text-align: center;
+  color: var(--text-secondary);
+}
+
+.status.success {
+  background: rgba(0, 186, 124, 0.1);
+  color: var(--success-green);
+  border-top-color: var(--success-green);
+}
+
+.status.error {
+  background: rgba(255, 59, 48, 0.1);
+  color: var(--error-red);
+  border-top-color: var(--error-red);
+}
+
+.status.warning {
+  background: rgba(255, 149, 0, 0.1);
+  color: var(--warning-orange);
+  border-top-color: var(--warning-orange);
+}
+
+/* Info boxes */
+.info-box {
+  background: var(--light-blue);
+  border: 1px solid rgba(29, 155, 240, 0.2);
+  border-radius: var(--border-radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.info-box p {
+  margin: 0;
+  color: var(--primary-blue);
+  font-weight: 500;
+}
+
+/* Identity info */
+.identity-info {
+  background: var(--background-secondary);
+  border-radius: var(--border-radius);
+  padding: 16px;
+  margin: 16px 0;
+}
+
+.identity-info p {
+  margin: 4px 0;
+  font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+  font-size: 12px;
+  word-break: break-all;
+  color: var(--text-secondary);
+}
+
+/* Responsive design */
+@media (max-width: 600px) {
+  #root {
+    padding: 10px;
+  }
+
+  .app {
+    border-radius: var(--border-radius);
+  }
+
+  .app h1 {
+    font-size: 24px;
+    padding: 20px;
+  }
+
+  .login-section,
+  .link-section,
+  .chat-section {
+    padding: 24px 20px;
+  }
+}
+
+/* Loading animation */
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.loading {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+/* Success checkmark */
+.success-icon {
+  display: inline-block;
+  width: 20px;
+  height: 20px;
+  background: var(--success-green);
+  border-radius: 50%;
+  margin-right: 8px;
+  position: relative;
+}
+
+.success-icon::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: white;
+  font-weight: bold;
+  font-size: 12px;
+}

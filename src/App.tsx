@@ -1,0 +1,219 @@
+import { useState } from 'react'
+import { AtpAgent } from '@atproto/api'
+import { Client, type Signer } from '@xmtp/browser-sdk'
+import './App.css'
+
+// Create a passkey-based signer
+const createPasskeySigner = (): Signer => {
+  let credential: PublicKeyCredential | null = null
+  let credentialId: string = ''
+
+  const getIdentifier = () => {
+    // For demo, use a fixed identifier based on passkey
+    // In production, this should be derived from the passkey
+    return {
+      identifierKind: 'Ethereum' as const,
+      identifier: '0x' + credentialId.slice(0, 40).padStart(40, '0'),
+    }
+  }
+
+  const signMessage = async (message: string): Promise<Uint8Array> => {
+    if (!credential) {
+      // Create a new passkey credential
+      credential = await navigator.credentials.create({
+        publicKey: {
+          challenge: crypto.getRandomValues(new Uint8Array(32)),
+          rp: { name: 'SkyChat', id: window.location.hostname },
+          user: {
+            id: crypto.getRandomValues(new Uint8Array(32)),
+            name: 'SkyChat User',
+            displayName: 'SkyChat User',
+          },
+          pubKeyCredParams: [{ alg: -7, type: 'public-key' }],
+          authenticatorSelection: {
+            authenticatorAttachment: 'platform',
+            userVerification: 'required',
+          },
+        },
+      }) as PublicKeyCredential
+
+      credentialId = btoa(String.fromCharCode(...new Uint8Array(credential.rawId)))
+    }
+
+    const assertion = await navigator.credentials.get({
+      publicKey: {
+        challenge: new TextEncoder().encode(message),
+        allowCredentials: [{
+          id: credential.rawId,
+          type: 'public-key',
+        }],
+        userVerification: 'required',
+      },
+    }) as PublicKeyCredential
+
+    const response = assertion.response as AuthenticatorAssertionResponse
+    return new Uint8Array(response.signature)
+  }
+
+  return {
+    type: 'EOA',
+    getIdentifier,
+    signMessage,
+  }
+}
+
+function App() {
+  const [blueskyHandle, setBlueskyHandle] = useState('')
+  const [blueskyPassword, setBlueskyPassword] = useState('')
+  const [agent, setAgent] = useState<AtpAgent | null>(null)
+  const [xmtpClient, setXmtpClient] = useState<Client | null>(null)
+  const [status, setStatus] = useState('')
+  const [isLinked, setIsLinked] = useState(false)
+  const [isLoading, setIsLoading] = useState(false)
+
+  const loginToBluesky = async () => {
+    if (!blueskyHandle || !blueskyPassword) {
+      setStatus('Please fill in all fields')
+      return
+    }
+
+    try {
+      setIsLoading(true)
+      setStatus('Connecting to Bluesky...')
+      const newAgent = new AtpAgent({ service: 'https://bsky.social' })
+      await newAgent.login({
+        identifier: blueskyHandle,
+        password: blueskyPassword,
+      })
+      setAgent(newAgent)
+      setStatus('Successfully connected to Bluesky!')
+    } catch (error) {
+      setStatus(`Connection failed: ${error}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const linkIdentities = async () => {
+    if (!agent) return
+
+    try {
+      setIsLoading(true)
+      setStatus('Creating passkey and XMTP client...')
+
+      const signer = createPasskeySigner()
+      const client = await Client.create(signer, { env: 'dev' })
+      setXmtpClient(client)
+
+      setStatus('Signing identity link...')
+
+      // Sign the DID with XMTP installation key
+      const signatureBytes = await client.signWithInstallationKey(agent.session!.did)
+      const signatureString = btoa(String.fromCharCode(...new Uint8Array(signatureBytes)))
+
+      setStatus('Publishing to Bluesky...')
+
+      // Publish the record to ATProto
+      await agent.com.atproto.repo.putRecord({
+        repo: agent.session!.did,
+        collection: 'org.xmtp.inbox',
+        rkey: 'self',
+        record: {
+          id: client.inboxId,
+          verificationSignature: signatureString,
+          createdAt: new Date().toISOString(),
+        },
+      })
+
+      setStatus('Verifying link...')
+
+      // Verify the signature
+      const inboxStates = await Client.fetchInboxStates([client.inboxId!], 'dev')
+      const inboxState = inboxStates[0]
+
+      let isValid = false
+      for (const installation of inboxState.installations) {
+        if (await client.verifySignedWithPublicKey(
+          agent.session!.did,
+          signatureBytes,
+          installation.bytes
+        )) {
+          isValid = true
+          break
+        }
+      }
+
+      if (isValid) {
+        setIsLinked(true)
+        setStatus('Identities successfully linked!')
+      } else {
+        setStatus('Link verification failed')
+      }
+    } catch (error) {
+      setStatus(`Identity linking failed: ${error}`)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  return (
+    <div className="app">
+      <h1>🔗 SkyChat</h1>
+
+      {!agent && (
+        <div className="login-section">
+          <h2>Connect Bluesky Account</h2>
+          <p>Link your Bluesky identity to enable secure messaging</p>
+          <input
+            type="text"
+            placeholder="Bluesky handle (e.g., user.bsky.social)"
+            value={blueskyHandle}
+            onChange={(e) => setBlueskyHandle(e.target.value)}
+          />
+          <input
+            type="password"
+            placeholder="App password"
+            value={blueskyPassword}
+            onChange={(e) => setBlueskyPassword(e.target.value)}
+          />
+          <button onClick={loginToBluesky} disabled={isLoading}>
+            {isLoading ? 'Connecting...' : 'Connect Account'}
+          </button>
+        </div>
+      )}
+
+      {agent && !isLinked && (
+        <div className="link-section">
+          <h2>Create XMTP Identity</h2>
+          <div className="info-box">
+            <p>✅ Connected as: <strong>{agent.session?.handle}</strong></p>
+          </div>
+          <p>This will create a passkey for secure XMTP messaging that links to your Bluesky identity.</p>
+          <button onClick={linkIdentities} disabled={isLoading}>
+            {isLoading ? 'Creating...' : 'Create Passkey & Link Identity'}
+          </button>
+        </div>
+      )}
+
+      {isLinked && (
+        <div className="chat-section">
+          <h2>🎉 Identity Linked!</h2>
+          <div className="info-box">
+            <p><span className="success-icon"></span>Bluesky and XMTP identities are now connected</p>
+          </div>
+          <div className="identity-info">
+            <p><strong>Bluesky DID:</strong> {agent?.session?.did}</p>
+            <p><strong>XMTP Inbox:</strong> {xmtpClient?.inboxId}</p>
+          </div>
+          <p>Chat functionality coming soon! 🚀</p>
+        </div>
+      )}
+
+      <div className={`status ${status.includes('successfully') || status.includes('Successfully') ? 'success' : status.includes('failed') || status.includes('Failed') ? 'error' : isLoading ? 'loading' : ''}`}>
+        {status}
+      </div>
+    </div>
+  )
+}
+
+export default App
