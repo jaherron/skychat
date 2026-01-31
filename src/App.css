@@ -284,6 +284,23 @@ button:disabled {
   color: var(--dark-blue);
 }
 
+/* Logout button */
+.logout-button {
+  background: var(--error-red, #dc3545);
+  color: white;
+  border: none;
+  padding: 6px 12px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 12px;
+  margin-top: 8px;
+  transition: background-color 0.2s;
+}
+
+.logout-button:hover {
+  background: #c82333;
+}
+
 /* Modal styles */
 .modal {
   position: fixed;

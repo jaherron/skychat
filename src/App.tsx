@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { AtpAgent } from '@atproto/api'
 import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
 import { ethers } from 'ethers'
@@ -117,6 +117,54 @@ function App() {
   const [showRestoreModal, setShowRestoreModal] = useState(false)
   const [restorePassword, setRestorePassword] = useState('')
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
+  const [hasExistingAccount, setHasExistingAccount] = useState(false)
+
+  const restoreBlueskySession = useCallback(async (sessionData: string, hasAccount: boolean) => {
+    try {
+      setIsLoading(true)
+      setStatus('Restoring Bluesky session...')
+
+      const session = JSON.parse(sessionData)
+      const agent = new AtpAgent({ service: 'https://bsky.social' })
+
+      // Try to resume the session
+      await agent.resumeSession(session)
+
+      setAgent(agent)
+      setStatus('Bluesky session restored!')
+
+      // If we have an existing account, check for identity link
+      if (hasAccount) {
+        await checkExistingIdentityLink(agent)
+      }
+    } catch {
+      // Session expired or invalid, clear it
+      localStorage.removeItem('skychat_bluesky_session')
+      if (hasAccount) {
+        setStatus('Welcome back! Your Bluesky session expired. Please reconnect.')
+      } else {
+        setStatus('')
+      }
+    } finally {
+      setIsLoading(false)
+    }
+  }, [])
+
+  // Check for existing account and session on mount
+  useEffect(() => {
+    const existingKey = localStorage.getItem('skychat_wallet_private_key')
+    const storedSession = localStorage.getItem('skychat_bluesky_session')
+
+    if (existingKey) {
+      setHasExistingAccount(true)
+    }
+
+    if (storedSession) {
+      restoreBlueskySession(storedSession, !!existingKey)
+    } else if (existingKey) {
+      setStatus('Welcome back! Connect your Bluesky account to continue.')
+    }
+  }, [restoreBlueskySession])
 
   const loginToBluesky = async () => {
     if (!blueskyHandle || !blueskyPassword) {
@@ -133,11 +181,57 @@ function App() {
         password: blueskyPassword,
       })
       setAgent(newAgent)
-      setStatus('Successfully connected to Bluesky!')
+
+      // Store the session for persistence
+      localStorage.setItem('skychat_bluesky_session', JSON.stringify(newAgent.session))
+
+      if (hasExistingAccount) {
+        // Check if identity is already linked
+        await checkExistingIdentityLink(newAgent)
+      } else {
+        setStatus('Successfully connected to Bluesky!')
+      }
     } catch (error) {
       setStatus(`Connection failed: ${error}`)
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const logout = () => {
+    setAgent(null)
+    setXmtpClient(null)
+    setIsLinked(false)
+    setBlueskyHandle('')
+    setBlueskyPassword('')
+    localStorage.removeItem('skychat_bluesky_session')
+    setStatus('')
+  }
+
+  const checkExistingIdentityLink = async (agent: AtpAgent) => {
+    try {
+      setStatus('Checking for existing identity link...')
+      
+      // Try to fetch the existing identity record
+      const record = await agent.com.atproto.repo.getRecord({
+        repo: agent.session!.did,
+        collection: 'org.xmtp.inbox',
+        rkey: 'self',
+      })
+
+      if (record.data?.value) {
+        // Identity is already linked, initialize XMTP client
+        const { signer } = createEOASigner()
+        const client = await Client.create(signer, { env: 'dev' })
+        setXmtpClient(client)
+        setIsLinked(true)
+        setStatus('Welcome back! Your identities are already linked.')
+      } else {
+        setStatus('Successfully connected to Bluesky! Ready to link identities.')
+      }
+    } catch {
+      // No existing record found, proceed normally
+      setStatus('Successfully connected to Bluesky! Ready to link identities.')
     }
   }
 
@@ -244,10 +338,11 @@ function App() {
       const text = await restoreFile.text()
       const privateKey = await decryptPrivateKey(text, restorePassword)
       localStorage.setItem('skychat_wallet_private_key', privateKey)
+      setHasExistingAccount(true)
       setShowRestoreModal(false)
       setRestorePassword('')
       setRestoreFile(null)
-      setStatus('Key restored successfully! Please refresh the page.')
+      setStatus('Key restored successfully! You can now connect your Bluesky account.')
     } catch (error) {
       setStatus('Restore failed: ' + error)
     }
@@ -259,8 +354,10 @@ function App() {
 
       {!agent && (
         <div className="login-section">
-          <h2>Connect Bluesky Account</h2>
-          <p>Link your Bluesky identity to enable secure messaging</p>
+          <h2>{hasExistingAccount ? 'Welcome Back' : 'Connect Bluesky Account'}</h2>
+          <p>{hasExistingAccount 
+            ? 'Connect your Bluesky account to access your existing SkyChat identity' 
+            : 'Link your Bluesky identity to enable secure messaging'}</p>
           
           <div className="restore-section">
             <p>Already have a backup? <button onClick={() => setShowRestoreModal(true)} className="link-button">Restore from backup</button></p>
@@ -279,7 +376,7 @@ function App() {
             onChange={(e) => setBlueskyPassword(e.target.value)}
           />
           <button onClick={loginToBluesky} disabled={isLoading}>
-            {isLoading ? 'Connecting...' : 'Connect Account'}
+            {isLoading ? 'Connecting...' : hasExistingAccount ? 'Continue with Account' : 'Connect Account'}
           </button>
         </div>
       )}
@@ -289,6 +386,7 @@ function App() {
           <h2>Create XMTP Identity</h2>
           <div className="info-box">
             <p>✅ Connected as: <strong>{agent.session?.handle}</strong></p>
+            <button onClick={logout} className="logout-button">Logout</button>
           </div>
           <p>This will create a passkey for secure XMTP messaging that links to your Bluesky identity.</p>
           <button onClick={linkIdentities} disabled={isLoading}>
@@ -306,6 +404,7 @@ function App() {
           <div className="identity-info">
             <p><strong>Bluesky DID:</strong> {agent?.session?.did}</p>
             <p><strong>XMTP Inbox:</strong> {xmtpClient?.inboxId}</p>
+            <button onClick={logout} className="logout-button">Logout</button>
           </div>
           <p>Chat functionality coming soon! 🚀</p>
         </div>
