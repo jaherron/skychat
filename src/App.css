@@ -254,6 +254,36 @@ button:disabled {
   background: var(--primary-blue);
 }
 
+/* Restore section */
+.restore-section {
+  margin-bottom: 20px;
+  padding: 16px;
+  background: var(--light-blue);
+  border-radius: var(--border-radius);
+  border: 1px solid var(--border-color);
+}
+
+.restore-section p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+}
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--primary-blue);
+  cursor: pointer;
+  text-decoration: underline;
+  font-size: inherit;
+  padding: 0;
+  margin-left: 4px;
+}
+
+.link-button:hover {
+  color: var(--dark-blue);
+}
+
 /* Modal styles */
 .modal {
   position: fixed;

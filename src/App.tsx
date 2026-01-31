@@ -257,14 +257,15 @@ function App() {
     <div className="app">
       <h1>🔗 SkyChat</h1>
 
-      <button onClick={() => setShowRestoreModal(true)} className="restore-button">
-        Restore from Backup
-      </button>
-
       {!agent && (
         <div className="login-section">
           <h2>Connect Bluesky Account</h2>
           <p>Link your Bluesky identity to enable secure messaging</p>
+          
+          <div className="restore-section">
+            <p>Already have a backup? <button onClick={() => setShowRestoreModal(true)} className="link-button">Restore from backup</button></p>
+          </div>
+
           <input
             type="text"
             placeholder="Bluesky handle (e.g., user.bsky.social)"
