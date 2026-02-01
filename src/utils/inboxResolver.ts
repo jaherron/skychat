@@ -26,8 +26,11 @@ export async function resolveInboxId(
       did = response.data.did
     }
 
+    // Create an unauthenticated agent for reading public records
+    const publicAgent = new AtpAgent({ service: 'https://bsky.social' })
+
     // List all records in the XMTP inbox collection
-    const records = await agent.com.atproto.repo.listRecords({
+    const records = await publicAgent.com.atproto.repo.listRecords({
       repo: did,
       collection: 'org.xmtp.inbox',
     })
