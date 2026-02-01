@@ -419,16 +419,6 @@ function App() {
           {(!isMobile || !selectedConversation) && (
             <div className="chat-header">
               <h2>💬 SkyChat</h2>
-              <div className="chat-actions">
-                <button
-                  onClick={() => setShowNewChatModal(true)}
-                  className="new-chat-button"
-                  title="New conversation"
-                >
-                  ✏️ New Chat
-                </button>
-                <button onClick={logout} className="logout-button">Logout</button>
-              </div>
             </div>
           )}
 
@@ -440,6 +430,8 @@ function App() {
                   onSelectConversation={(conversation) => {
                     setSelectedConversation(conversation)
                   }}
+                  onNewChat={() => setShowNewChatModal(true)}
+                  onLogout={logout}
                 />
               </div>
             )}

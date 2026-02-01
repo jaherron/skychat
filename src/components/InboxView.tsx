@@ -4,16 +4,19 @@ import { Client, Conversation, ConsentState } from '@xmtp/browser-sdk'
 interface InboxViewProps {
   xmtpClient: Client
   onSelectConversation: (conversation: Conversation) => void
+  onNewChat?: () => void
+  onLogout?: () => void
 }
 
 interface ConversationItem {
   conversation: Conversation
   lastMessage?: any
   peerInboxId: string
+  displayName: string
   consentState: ConsentState
 }
 
-export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) {
+export function InboxView({ xmtpClient, onSelectConversation, onNewChat, onLogout }: InboxViewProps) {
   const [conversations, setConversations] = useState<ConversationItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -46,13 +49,28 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
           // Get consent state for this conversation
           const consentState = await conv.consentState()
 
-          // For now, use a placeholder peerInboxId - we'll need to determine this based on conversation type
-          const peerInboxId = 'unknown' // TODO: Get actual peer inbox ID
+          // Get peer inbox ID - for DM conversations, this should be the other participant
+          let peerInboxId = 'unknown'
+          try {
+            // Try to get peer inbox ID - this might be different for Group vs DM conversations
+            if ('peerInboxIds' in conv && Array.isArray(conv.peerInboxIds)) {
+              peerInboxId = conv.peerInboxIds.find((id: string) => id !== xmtpClient.inboxId) || conv.peerInboxIds[0] || 'unknown'
+            } else {
+              // Fallback for other conversation types
+              peerInboxId = conv.id || 'unknown'
+            }
+          } catch (err) {
+            peerInboxId = 'unknown'
+          }
+          
+          // Try to resolve the peer identity
+          let displayName = peerInboxId.slice(0, 8) + '...'
 
           conversationItems.push({
             conversation: conv,
             lastMessage,
             peerInboxId,
+            displayName,
             consentState,
           })
         } catch (err) {
@@ -61,6 +79,7 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
           conversationItems.push({
             conversation: conv,
             peerInboxId: 'unknown', // TODO: Get actual peer inbox ID
+            displayName: 'Unknown',
             consentState: ConsentState.Unknown, // Default to unknown if we can't get it
           })
         }
@@ -85,9 +104,21 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
       for await (const conversation of stream) {
         // Add new conversation to the list
         const consentState = await conversation.consentState()
+        let peerInboxId = 'unknown'
+        try {
+          if ('peerInboxIds' in conversation && Array.isArray(conversation.peerInboxIds)) {
+            peerInboxId = conversation.peerInboxIds.find((id: string) => id !== xmtpClient.inboxId) || conversation.peerInboxIds[0] || 'unknown'
+          } else {
+            peerInboxId = conversation.id || 'unknown'
+          }
+        } catch (err) {
+          peerInboxId = 'unknown'
+        }
+        const displayName = peerInboxId.slice(0, 8) + '...'
         const newConversationItem: ConversationItem = {
           conversation,
-          peerInboxId: conversation.id, // Use conversation ID as peer ID for now
+          peerInboxId,
+          displayName,
           consentState,
         }
 
@@ -176,9 +207,16 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
       <div className="inbox-header">
         <h2>Messages</h2>
         <div className="inbox-actions">
-          <button className="new-chat-button" title="New conversation">
-            ✏️
-          </button>
+          {onNewChat && (
+            <button className="new-chat-button" title="New conversation" onClick={onNewChat}>
+              ✏️ New Chat
+            </button>
+          )}
+          {onLogout && (
+            <button className="logout-button" onClick={onLogout}>
+              Logout
+            </button>
+          )}
         </div>
       </div>
 
@@ -203,7 +241,7 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
               <div className="conversation-content">
                 <div className="conversation-header">
                   <span className="peer-name">
-                    {item.peerInboxId.slice(0, 8)}...
+                    {item.displayName}
                     {item.consentState === ConsentState.Unknown && (
                       <span className="request-badge">Message Request</span>
                     )}
