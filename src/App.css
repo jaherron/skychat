@@ -106,7 +106,6 @@ input::placeholder {
 
 /* Buttons */
 button {
-  width: 100%;
   padding: 14px 20px;
   background: var(--primary-blue);
   color: white;
