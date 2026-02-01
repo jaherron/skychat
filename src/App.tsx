@@ -1,7 +1,10 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AtpAgent } from '@atproto/api'
-import { Client, type Signer, IdentifierKind } from '@xmtp/browser-sdk'
+import { Client, type Signer, IdentifierKind, Conversation } from '@xmtp/browser-sdk'
 import { ethers } from 'ethers'
+import { InboxView } from './components/InboxView'
+import { MessageView } from './components/MessageView'
+import { NewChatModal } from './components/NewChatModal'
 import './App.css'
 
 // Encryption utilities for key backup
@@ -119,6 +122,11 @@ function App() {
   const [restoreFile, setRestoreFile] = useState<File | null>(null)
   const [hasExistingAccount, setHasExistingAccount] = useState(false)
 
+  // Chat state
+  const [selectedConversation, setSelectedConversation] = useState<Conversation | null>(null)
+  const [showNewChatModal, setShowNewChatModal] = useState(false)
+  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
+
   const restoreBlueskySession = useCallback(async (sessionData: string, hasAccount: boolean) => {
     try {
       setIsLoading(true)
@@ -166,6 +174,16 @@ function App() {
     }
   }, [restoreBlueskySession])
 
+  // Handle window resize for responsive design
+  useEffect(() => {
+    const handleResize = () => {
+      setIsMobile(window.innerWidth < 768)
+    }
+
+    window.addEventListener('resize', handleResize)
+    return () => window.removeEventListener('resize', handleResize)
+  }, [])
+
   const loginToBluesky = async () => {
     if (!blueskyHandle || !blueskyPassword) {
       setStatus('Please fill in all fields')
@@ -202,6 +220,8 @@ function App() {
     setAgent(null)
     setXmtpClient(null)
     setIsLinked(false)
+    setSelectedConversation(null)
+    setShowNewChatModal(false)
     setBlueskyHandle('')
     setBlueskyPassword('')
     localStorage.removeItem('skychat_bluesky_session')
@@ -388,25 +408,52 @@ function App() {
             <p>✅ Connected as: <strong>{agent.session?.handle}</strong></p>
             <button onClick={logout} className="logout-button">Logout</button>
           </div>
-          <p>This will create a passkey for secure XMTP messaging that links to your Bluesky identity.</p>
+          <p>This will create your identity on the XMTP network for secure messaging that links to your Bluesky identity.</p>
           <button onClick={linkIdentities} disabled={isLoading}>
-            {isLoading ? 'Creating...' : 'Create Passkey & Link Identity'}
+            {isLoading ? 'Creating...' : 'Create XMTP Identity'}
           </button>
         </div>
       )}
 
       {isLinked && (
         <div className="chat-section">
-          <h2>🎉 Identity Linked!</h2>
-          <div className="info-box">
-            <p><span className="success-icon"></span>Bluesky and XMTP identities are now connected</p>
+          <div className="chat-header">
+            <h2>💬 SkyChat</h2>
+            <div className="chat-actions">
+              <button
+                onClick={() => setShowNewChatModal(true)}
+                className="new-chat-button"
+                title="New conversation"
+              >
+                ✏️ New Chat
+              </button>
+              <button onClick={logout} className="logout-button">Logout</button>
+            </div>
           </div>
-          <div className="identity-info">
-            <p><strong>Bluesky DID:</strong> {agent?.session?.did}</p>
-            <p><strong>XMTP Inbox:</strong> {xmtpClient?.inboxId}</p>
-            <button onClick={logout} className="logout-button">Logout</button>
+
+          <div className="chat-container">
+            {(!isMobile || !selectedConversation) && (
+              <div className={`inbox-panel ${isMobile ? 'mobile-inbox' : 'desktop-inbox'}`}>
+                <InboxView
+                  xmtpClient={xmtpClient!}
+                  onSelectConversation={(conversation) => {
+                    setSelectedConversation(conversation)
+                  }}
+                />
+              </div>
+            )}
+
+            {(!isMobile || selectedConversation) && (
+              <div className={`message-panel ${isMobile ? 'mobile-message' : 'desktop-message'}`}>
+                <MessageView
+                  conversation={selectedConversation}
+                  xmtpClient={xmtpClient!}
+                  onBack={isMobile ? () => setSelectedConversation(null) : undefined}
+                  isMobile={isMobile}
+                />
+              </div>
+            )}
           </div>
-          <p>Chat functionality coming soon! 🚀</p>
         </div>
       )}
 
@@ -452,6 +499,17 @@ function App() {
           </div>
         </div>
       )}
+
+      <NewChatModal
+        isOpen={showNewChatModal}
+        onClose={() => setShowNewChatModal(false)}
+        xmtpClient={xmtpClient!}
+        agent={agent!}
+        onConversationCreated={(conversation) => {
+          setSelectedConversation(conversation)
+          setShowNewChatModal(false)
+        }}
+      />
 
       <div className={`status ${status.includes('successfully') || status.includes('Successfully') ? 'success' : status.includes('failed') || status.includes('Failed') ? 'error' : isLoading ? 'loading' : ''}`}>
         {status}
