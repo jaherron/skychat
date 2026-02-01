@@ -40,7 +40,11 @@ export async function resolveInboxId(
     }
 
     return null
-  } catch (error) {
+  } catch (error: any) {
+    // If the repo doesn't exist, it's expected - the user hasn't linked their identity
+    if (error.message?.includes('Could not find repo')) {
+      return null
+    }
     console.error('Failed to resolve inbox ID:', error)
     return null
   }
