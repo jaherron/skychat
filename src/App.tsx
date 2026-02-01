@@ -368,7 +368,7 @@ function App() {
   }
 
   return (
-    <div className="app">
+    <div className={`app ${isLinked ? 'fullscreen' : ''}`}>
       <h1>🔗 SkyChat</h1>
 
       {!agent && (
