@@ -8,6 +8,16 @@
   box-shadow: var(--shadow);
   overflow: hidden;
   position: relative;
+  min-height: 100vh;
+}
+
+.app.fullscreen {
+  max-width: none;
+  margin: 0;
+  border-radius: 0;
+  box-shadow: none;
+  min-height: 100vh;
+  height: 100vh;
 }
 
 .app::before {
@@ -32,12 +42,21 @@
   letter-spacing: -0.5px;
 }
 
+.app.fullscreen h1 {
+  padding: 16px 24px;
+  font-size: 20px;
+}
+
 /* Section containers */
 .login-section,
 .link-section,
 .chat-section {
   padding: 32px 24px;
   border-bottom: 1px solid var(--border-color);
+}
+
+.app.fullscreen .chat-section {
+  padding: 0;
 }
 
 .login-section:last-child,
@@ -347,6 +366,10 @@ button:disabled {
   display: flex;
   height: calc(100vh - 200px);
   min-height: 500px;
+}
+
+.app.fullscreen .chat-container {
+  height: calc(100vh - 80px); /* Account for smaller header in fullscreen */
 }
 
 /* Inbox panel */
