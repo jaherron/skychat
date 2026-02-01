@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react'
-import { Conversation, Client } from '@xmtp/browser-sdk'
+import { Conversation, Client, ConsentState } from '@xmtp/browser-sdk'
 
 interface MessageViewProps {
   conversation: Conversation | null
@@ -22,13 +22,19 @@ export function MessageView({ conversation, xmtpClient, onBack, isMobile }: Mess
   const [isLoading, setIsLoading] = useState(false)
   const [isSending, setIsSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [messageStream, setMessageStream] = useState<any>(null)
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (conversation) {
       loadMessages()
+      startMessageStream()
     } else {
       setMessages([])
+    }
+
+    return () => {
+      stopMessageStream()
     }
   }, [conversation])
 
@@ -60,6 +66,44 @@ export function MessageView({ conversation, xmtpClient, onBack, isMobile }: Mess
       setError('Failed to load messages')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const startMessageStream = async () => {
+    if (!conversation) return
+
+    try {
+      stopMessageStream() // Clean up any existing stream
+
+      const stream = await xmtpClient.conversations.streamAllMessages({
+        consentStates: [ConsentState.Allowed, ConsentState.Unknown]
+      })
+      setMessageStream(stream)
+
+      for await (const message of stream) {
+        // Only process messages for this conversation
+        if (message.conversationId === conversation.id) {
+          // Add new message to the list
+          const newMessageItem: MessageItem = {
+            id: message.id,
+            content: message.contentType?.typeId === 'text' ? (message.content as string) : '[Media message]',
+            sentAt: message.sentAt,
+            senderInboxId: message.senderInboxId,
+            isFromMe: message.senderInboxId === xmtpClient.inboxId,
+          }
+
+          setMessages(prevMessages => [...prevMessages, newMessageItem])
+        }
+      }
+    } catch (err) {
+      console.error('Error streaming messages:', err)
+    }
+  }
+
+  const stopMessageStream = () => {
+    if (messageStream) {
+      // Note: XMTP streams don't have a direct close method, but we can set it to null
+      setMessageStream(null)
     }
   }
 

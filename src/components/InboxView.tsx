@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { Client, Conversation } from '@xmtp/browser-sdk'
+import { Client, Conversation, ConsentState } from '@xmtp/browser-sdk'
 
 interface InboxViewProps {
   xmtpClient: Client
@@ -10,15 +10,22 @@ interface ConversationItem {
   conversation: Conversation
   lastMessage?: any
   peerInboxId: string
+  consentState: ConsentState
 }
 
 export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) {
   const [conversations, setConversations] = useState<ConversationItem[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [conversationStream, setConversationStream] = useState<any>(null)
 
   useEffect(() => {
     loadConversations()
+    startConversationStream()
+
+    return () => {
+      stopConversationStream()
+    }
   }, [xmtpClient])
 
   const loadConversations = async () => {
@@ -36,6 +43,9 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
           const messages = await conv.messages({ limit: 1n })
           const lastMessage = messages.length > 0 ? messages[0] : undefined
 
+          // Get consent state for this conversation
+          const consentState = await conv.consentState()
+
           // For now, use a placeholder peerInboxId - we'll need to determine this based on conversation type
           const peerInboxId = 'unknown' // TODO: Get actual peer inbox ID
 
@@ -43,6 +53,7 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
             conversation: conv,
             lastMessage,
             peerInboxId,
+            consentState,
           })
         } catch (err) {
           console.error('Error loading conversation:', err)
@@ -50,6 +61,7 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
           conversationItems.push({
             conversation: conv,
             peerInboxId: 'unknown', // TODO: Get actual peer inbox ID
+            consentState: ConsentState.Unknown, // Default to unknown if we can't get it
           })
         }
       }
@@ -60,6 +72,55 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
       setError('Failed to load conversations')
     } finally {
       setIsLoading(false)
+    }
+  }
+
+  const startConversationStream = async () => {
+    try {
+      stopConversationStream() // Clean up any existing stream
+
+      const stream = await xmtpClient.conversations.stream()
+      setConversationStream(stream)
+
+      for await (const conversation of stream) {
+        // Add new conversation to the list
+        const consentState = await conversation.consentState()
+        const newConversationItem: ConversationItem = {
+          conversation,
+          peerInboxId: conversation.id, // Use conversation ID as peer ID for now
+          consentState,
+        }
+
+        setConversations(prevConversations => [newConversationItem, ...prevConversations])
+      }
+    } catch (err) {
+      console.error('Error streaming conversations:', err)
+    }
+  }
+
+  const stopConversationStream = () => {
+    if (conversationStream) {
+      setConversationStream(null)
+    }
+  }
+
+  const handleApproveRequest = async (conversation: Conversation) => {
+    try {
+      await conversation.updateConsentState(ConsentState.Allowed)
+      // Refresh conversations to update the UI
+      await loadConversations()
+    } catch (err) {
+      console.error('Error approving message request:', err)
+    }
+  }
+
+  const handleDenyRequest = async (conversation: Conversation) => {
+    try {
+      await conversation.updateConsentState(ConsentState.Denied)
+      // Refresh conversations to update the UI
+      await loadConversations()
+    } catch (err) {
+      console.error('Error denying message request:', err)
     }
   }
 
@@ -131,8 +192,8 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
           conversations.map((item) => (
             <div
               key={item.peerInboxId}
-              className="conversation-item"
-              onClick={() => onSelectConversation(item.conversation)}
+              className={`conversation-item ${item.consentState === ConsentState.Unknown ? 'message-request' : ''}`}
+              onClick={() => item.consentState === ConsentState.Allowed && onSelectConversation(item.conversation)}
             >
               <div className="conversation-avatar">
                 <div className="avatar-placeholder">
@@ -141,7 +202,12 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
               </div>
               <div className="conversation-content">
                 <div className="conversation-header">
-                  <span className="peer-name">{item.peerInboxId.slice(0, 8)}...</span>
+                  <span className="peer-name">
+                    {item.peerInboxId.slice(0, 8)}...
+                    {item.consentState === ConsentState.Unknown && (
+                      <span className="request-badge">Message Request</span>
+                    )}
+                  </span>
                   <span className="timestamp">
                     {formatTimestamp(item.lastMessage?.sentAt)}
                   </span>
@@ -149,6 +215,28 @@ export function InboxView({ xmtpClient, onSelectConversation }: InboxViewProps) 
                 <div className="last-message">
                   {formatMessagePreview(item.lastMessage)}
                 </div>
+                {item.consentState === ConsentState.Unknown && (
+                  <div className="consent-actions">
+                    <button
+                      className="approve-button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleApproveRequest(item.conversation)
+                      }}
+                    >
+                      Accept
+                    </button>
+                    <button
+                      className="deny-button"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleDenyRequest(item.conversation)
+                      }}
+                    >
+                      Decline
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           ))
