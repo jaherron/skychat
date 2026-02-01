@@ -11,4 +11,6 @@ Thanks to [Shane](https://x.com/shanemac) and [Saul](https://x.com/saulcarlin) f
 I may be contributing to the sentiment that ATProto is the **_SlopHaven Protocol._**
 To be clear, I'm only OK with chatbots/coding. Not content (image/video) generation!
 
+> ***Can we not make ATProto the SlopHaven™ Protocol©?*** - [Blog post](https://cyrneko.leaflet.pub/3mdjwzcgyvs2c) by [@alexia.starlightnet.work](https://bsky.app/profile/alexia.starlightnet.work)
+
 ![A screenshot of SkyChat in action, chatting with Saul from XMTP](https://api.grove.storage/c65b0ce27a625204f3446f1869d10585f1ff79ff325d525d3d1cb6ccb9f6b13c)
