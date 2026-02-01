@@ -368,7 +368,7 @@ button:disabled {
 }
 
 .app.fullscreen .chat-container {
-  height: calc(100vh - 40px); /* Even more space since header is gone */
+  height: calc(100vh - 40px);
 }
 
 /* Inbox panel */
