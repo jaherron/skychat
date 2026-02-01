@@ -232,14 +232,13 @@ function App() {
     try {
       setStatus('Checking for existing identity link...')
       
-      // Try to fetch the existing identity record
-      const record = await agent.com.atproto.repo.getRecord({
+      // List all records in the org.xmtp.inbox collection
+      const records = await agent.com.atproto.repo.listRecords({
         repo: agent.session!.did,
         collection: 'org.xmtp.inbox',
-        rkey: 'self',
       })
 
-      if (record.data?.value) {
+      if (records.data.records.length > 0) {
         // Identity is already linked, initialize XMTP client
         const { signer } = createEOASigner()
         const client = await Client.create(signer, { env: 'dev' })
