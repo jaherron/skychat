@@ -58,7 +58,7 @@ export function MessageView({ conversation, xmtpClient, onBack, isMobile }: Mess
           senderInboxId: msg.senderInboxId,
           isFromMe: msg.senderInboxId === xmtpClient.inboxId,
         }))
-        .reverse() // Show oldest first
+        // Messages are already in chronological order (oldest first), keep as is for newest at bottom
 
       setMessages(messageItems)
     } catch (err) {

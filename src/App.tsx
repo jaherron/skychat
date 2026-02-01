@@ -416,19 +416,21 @@ function App() {
 
       {isLinked && (
         <div className="chat-section">
-          <div className="chat-header">
-            <h2>💬 SkyChat</h2>
-            <div className="chat-actions">
-              <button
-                onClick={() => setShowNewChatModal(true)}
-                className="new-chat-button"
-                title="New conversation"
-              >
-                ✏️ New Chat
-              </button>
-              <button onClick={logout} className="logout-button">Logout</button>
+          {(!isMobile || !selectedConversation) && (
+            <div className="chat-header">
+              <h2>💬 SkyChat</h2>
+              <div className="chat-actions">
+                <button
+                  onClick={() => setShowNewChatModal(true)}
+                  className="new-chat-button"
+                  title="New conversation"
+                >
+                  ✏️ New Chat
+                </button>
+                <button onClick={logout} className="logout-button">Logout</button>
+              </div>
             </div>
-          </div>
+          )}
 
           <div className="chat-container">
             {(!isMobile || !selectedConversation) && (
