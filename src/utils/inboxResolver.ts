@@ -1,5 +1,11 @@
 import { AtpAgent } from '@atproto/api'
 
+interface XmtpInboxRecord {
+  id: string
+  verificationSignature: string
+  createdAt: string
+}
+
 /**
  * Resolves an AT handle or DID to an XMTP inbox ID using the org.xmtp.inbox record
  */
@@ -20,15 +26,14 @@ export async function resolveInboxId(
       did = response.data.did
     }
 
-    // Fetch the XMTP inbox record
-    const record = await agent.com.atproto.repo.getRecord({
+    // List all records in the XMTP inbox collection
+    const records = await agent.com.atproto.repo.listRecords({
       repo: did,
       collection: 'org.xmtp.inbox',
-      rkey: 'self',
     })
 
-    if (record.data?.value && typeof record.data.value === 'object') {
-      const inboxRecord = record.data.value as any
+    if (records.data.records.length > 0) {
+      const inboxRecord = records.data.records[0].value as unknown as XmtpInboxRecord
       if (inboxRecord.id) {
         return inboxRecord.id
       }
