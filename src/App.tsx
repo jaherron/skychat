@@ -369,7 +369,7 @@ function App() {
 
   return (
     <div className={`app ${isLinked ? 'fullscreen' : ''}`}>
-      <h1>🔗 SkyChat</h1>
+      {!isLinked && <h1>🔗 SkyChat</h1>}
 
       {!agent && (
         <div className="login-section">
